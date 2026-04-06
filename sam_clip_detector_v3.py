@@ -33,6 +33,24 @@ CLASSES = [
     "soda can",
     "cereal box",
     "milk carton",
+    "marker",
+    "pen",
+    "candy wrapper",
+    "food wrapper",
+    "chip bag",
+    "napkin",
+    "tissue",
+    "cup",
+    "straw",
+    "food box",
+    "pizza box",
+    "egg carton",
+    "newspaper",
+    "magazine",
+    "envelope",
+    "phone",
+    "cable",
+    "soap dispenser",
 ]
 
 # Map each class to bin type and color
@@ -51,6 +69,24 @@ CLASS_INFO = {
     "soda can":          ("Recycling", (210, 210, 210)),
     "cereal box":        ("Recycling", (0, 160, 255)),
     "milk carton":       ("Recycling", (200, 255, 200)),
+    "marker":            ("Trash",     (150, 0, 200)),
+    "pen":               ("Trash",     (150, 0, 200)),
+    "candy wrapper":     ("Trash",     (255, 0, 100)),
+    "food wrapper":      ("Trash",     (255, 50, 50)),
+    "chip bag":          ("Trash",     (200, 50, 0)),
+    "napkin":            ("Trash",     (180, 180, 150)),
+    "tissue":            ("Trash",     (180, 180, 150)),
+    "cup":               ("Recycling", (0, 200, 200)),
+    "straw":             ("Trash",     (255, 100, 150)),
+    "food box":          ("Recycling", (0, 150, 255)),
+    "pizza box":         ("Trash",     (100, 80, 50)),
+    "egg carton":        ("Recycling", (200, 230, 180)),
+    "newspaper":         ("Recycling", (220, 220, 180)),
+    "magazine":          ("Recycling", (200, 200, 150)),
+    "envelope":          ("Recycling", (240, 240, 200)),
+    "phone":             ("Special",   (255, 0, 255)),
+    "cable":             ("Special",   (200, 0, 200)),
+    "soap dispenser":    ("Recycling", (100, 200, 255)),
 }
 
 
@@ -286,7 +322,7 @@ def main():
 
     fps = 0.0
     prev_time = time.time()
-    seg_interval = 2  # run MobileSAM every N YOLO frames
+    seg_interval = 3  # run MobileSAM every N YOLO frames
     yolo_interval = 2  # run YOLO every N camera frames
     frame_count = 0
     yolo_count = 0
@@ -300,6 +336,8 @@ def main():
         if not ret:
             time.sleep(0.1)
             continue
+
+        frame = cv2.flip(frame, 1)  # mirror horizontally
 
         frame_count += 1
         h_orig, w_orig = frame.shape[:2]
