@@ -1,0 +1,9 @@
+*.pt
+*.pth
+*.onnx
+__pycache__/
+*.pyc
+checkpoints/
+runs/
+*.jpg
+*.png
