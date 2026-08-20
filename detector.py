@@ -1,20 +1,25 @@
 """
-♻️ Recyclable Detector — YOLO-World Edition
-=============================================
-Zero-shot detection using text prompts. No training needed.
-Just tell it what to look for and it finds it.
+Recyclable detector: YOLO-World for detection, MobileSAM for the contour.
+
+Detection is open-vocabulary, so the class list below is read as text at
+inference time. Adding an item to the waste stream means editing that list,
+not retraining anything.
+
+The two stages are staggered across frames to stay inside a live-video budget.
+See README.md for the numbers.
 
 Setup:
-    pip install ultralytics --upgrade
+    pip install -r requirements.txt
 
 Usage:
-    python sam_clip_detector.py
+    python detector.py      # q to quit
 """
+
 
 import time
 import cv2
 import numpy as np
-from ultralytics import YOLOWorld, FastSAM
+from ultralytics import YOLOWorld, SAM
 
 # ── Define what to detect ──────────────────────────────────────────────
 
@@ -33,6 +38,24 @@ CLASSES = [
     "soda can",
     "cereal box",
     "milk carton",
+    "marker",
+    "pen",
+    "candy wrapper",
+    "food wrapper",
+    "chip bag",
+    "napkin",
+    "tissue",
+    "cup",
+    "straw",
+    "food box",
+    "pizza box",
+    "egg carton",
+    "newspaper",
+    "magazine",
+    "envelope",
+    "phone",
+    "cable",
+    "soap dispenser",
 ]
 
 # Map each class to bin type and color
@@ -51,55 +74,25 @@ CLASS_INFO = {
     "soda can":          ("Recycling", (210, 210, 210)),
     "cereal box":        ("Recycling", (0, 160, 255)),
     "milk carton":       ("Recycling", (200, 255, 200)),
+    "marker":            ("Trash",     (150, 0, 200)),
+    "pen":               ("Trash",     (150, 0, 200)),
+    "candy wrapper":     ("Trash",     (255, 0, 100)),
+    "food wrapper":      ("Trash",     (255, 50, 50)),
+    "chip bag":          ("Trash",     (200, 50, 0)),
+    "napkin":            ("Trash",     (180, 180, 150)),
+    "tissue":            ("Trash",     (180, 180, 150)),
+    "cup":               ("Recycling", (0, 200, 200)),
+    "straw":             ("Trash",     (255, 100, 150)),
+    "food box":          ("Recycling", (0, 150, 255)),
+    "pizza box":         ("Trash",     (100, 80, 50)),
+    "egg carton":        ("Recycling", (200, 230, 180)),
+    "newspaper":         ("Recycling", (220, 220, 180)),
+    "magazine":          ("Recycling", (200, 200, 150)),
+    "envelope":          ("Recycling", (240, 240, 200)),
+    "phone":             ("Special",   (255, 0, 255)),
+    "cable":             ("Special",   (200, 0, 200)),
+    "soap dispenser":    ("Recycling", (100, 200, 255)),
 }
-
-
-def get_mask_for_bbox(frame, fastsam_model, bbox):
-    """Run FastSAM and find the mask that best overlaps with the YOLO bbox."""
-    h, w = frame.shape[:2]
-    x1, y1, x2, y2 = bbox
-
-    try:
-        results = fastsam_model(frame, imgsz=640, conf=0.3, iou=0.7,
-                                 retina_masks=True, verbose=False)
-    except Exception:
-        return None
-
-    if not results or len(results) == 0:
-        return None
-
-    result = results[0]
-    if result.masks is None:
-        return None
-
-    masks = result.masks.data.cpu().numpy()
-
-    best_mask = None
-    best_iou = 0
-
-    for mask in masks:
-        # Resize mask to frame size if needed
-        if mask.shape != (h, w):
-            mask = cv2.resize(mask.astype(np.float32), (w, h)) > 0.5
-
-        # Calculate overlap with YOLO bbox
-        bbox_mask = np.zeros((h, w), dtype=bool)
-        bbox_mask[y1:y2, x1:x2] = True
-
-        intersection = np.logical_and(mask, bbox_mask).sum()
-        union = np.logical_or(mask, bbox_mask).sum()
-        iou = intersection / max(union, 1)
-
-        # Also check what fraction of the mask is inside the bbox
-        mask_in_bbox = intersection / max(mask.sum(), 1)
-
-        # Best mask = high IoU and mostly inside the bbox
-        score = iou * 0.5 + mask_in_bbox * 0.5
-        if score > best_iou and mask_in_bbox > 0.3:
-            best_iou = score
-            best_mask = mask.astype(np.uint8)
-
-    return best_mask
 
 
 def draw_frame(frame, detections, fps):
@@ -160,7 +153,7 @@ def draw_frame(frame, detections, fps):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2)
 
     # HUD
-    cv2.putText(display, f"FPS: {fps:.1f} | YOLO-World + FastSAM | Q:Quit",
+    cv2.putText(display, f"FPS: {fps:.1f} | YOLO-World + MobileSAM | Q:Quit",
                 (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     cv2.putText(display, f"Detections: {len(detections)}",
                 (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
@@ -256,15 +249,19 @@ def main():
     yolo.set_classes(CLASSES)
     print(f"[INFO] Detecting: {', '.join(CLASSES)}")
 
-    print("[INFO] Loading FastSAM model...")
-    fastsam = FastSAM("FastSAM-s.pt")
-    print("[INFO] FastSAM loaded.")
+    print("[INFO] Loading MobileSAM model...")
+    mobilesam = SAM("mobile_sam.pt")
+    print("[INFO] MobileSAM loaded.")
 
-    # Open camera
+    # Open camera at lower resolution for speed
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("[ERROR] No camera")
         return
+
+    # Request 720p from camera
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     print("[INFO] Warming up camera...")
     time.sleep(2)
@@ -282,9 +279,12 @@ def main():
 
     fps = 0.0
     prev_time = time.time()
-    seg_interval = 3  # run FastSAM every N frames (YOLO runs every frame)
+    seg_interval = 3  # run MobileSAM every N YOLO frames
+    yolo_interval = 2  # run YOLO every N camera frames
     frame_count = 0
+    yolo_count = 0
     last_detections = []
+    last_yolo_detections = []
 
     print("[INFO] Running. Q to quit.\n")
 
@@ -294,87 +294,69 @@ def main():
             time.sleep(0.1)
             continue
 
+        frame = cv2.flip(frame, 1)  # mirror horizontally
+
         frame_count += 1
+        h_orig, w_orig = frame.shape[:2]
 
-        # YOLO-World runs every frame (fast)
-        results = yolo(frame, conf=0.1, verbose=False)
+        # YOLO-World runs every 2nd frame — no downscaling needed (camera is 640x480)
+        if frame_count % yolo_interval == 0:
+            yolo_count += 1
+            results = yolo(frame, conf=0.15, imgsz=640, verbose=False)
 
-        # Extract detections from YOLO
-        detections = []
-        if results and len(results) > 0:
-            result = results[0]
-            boxes = result.boxes
-            if boxes is not None and len(boxes) > 0:
-                for box in boxes:
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    label = result.names[cls_id]
-                    info = CLASS_INFO.get(label, ("Unknown", (128, 128, 128)))
-                    bin_type, color = info
-                    detections.append({
-                        "label": label, "conf": conf,
-                        "bin": bin_type, "color": color,
-                        "bbox": (x1, y1, x2, y2), "mask": None,
-                    })
+            detections = []
+            if results and len(results) > 0:
+                result = results[0]
+                boxes = result.boxes
+                if boxes is not None and len(boxes) > 0:
+                    for box in boxes:
+                        cls_id = int(box.cls[0])
+                        conf = float(box.conf[0])
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        label = result.names[cls_id]
+                        info = CLASS_INFO.get(label, ("Unknown", (128, 128, 128)))
+                        bin_type, color = info
+                        detections.append({
+                            "label": label, "conf": conf,
+                            "bin": bin_type, "color": color,
+                            "bbox": (x1, y1, x2, y2), "mask": None,
+                        })
 
-        # Merge same-class detections that overlap
-        detections = merge_same_class(detections)
+            detections = merge_same_class(detections)
+            last_yolo_detections = detections
+        else:
+            detections = last_yolo_detections
 
-        # Run FastSAM periodically to get masks for detected objects
-        if detections and frame_count % seg_interval == 0:
+        # Run MobileSAM periodically — encode image ONCE, segment all detections
+        if detections and yolo_count % seg_interval == 0:
             try:
-                fastsam_results = fastsam(frame, imgsz=640, conf=0.3, iou=0.7,
-                                          retina_masks=True, verbose=False)
-                if fastsam_results and len(fastsam_results) > 0:
-                    fsam_result = fastsam_results[0]
-                    if fsam_result.masks is not None:
-                        h, w = frame.shape[:2]
-                        all_masks = fsam_result.masks.data.cpu().numpy()
+                # Send ALL bboxes in one call — single image encode
+                all_bboxes = [list(det["bbox"]) for det in detections[:3]]
+                
+                sam_results = mobilesam(
+                    frame,
+                    bboxes=all_bboxes,
+                    imgsz=512,
+                    verbose=False,
+                )
 
-                        # Resize all masks once
-                        resized_masks = []
-                        for mask in all_masks:
-                            if mask.shape != (h, w):
-                                mask = cv2.resize(mask.astype(np.float32), (w, h)) > 0.5
-                            resized_masks.append(mask.astype(np.uint8))
+                if sam_results and len(sam_results) > 0:
+                    result = sam_results[0]
+                    if result.masks is not None:
+                        masks = result.masks.data.cpu().numpy()
+                        for i, det in enumerate(detections[:len(masks)]):
+                            mask = masks[i]
+                            if mask.shape != (h_orig, w_orig):
+                                mask = cv2.resize(mask.astype(np.float32), (w_orig, h_orig)) > 0.5
+                            mask = mask.astype(np.uint8)
 
-                        for det in detections:
-                            bx1, by1, bx2, by2 = det["bbox"]
-                            # Center point of YOLO detection
-                            center_x = (bx1 + bx2) // 2
-                            center_y = (by1 + by2) // 2
-
-                            best_mask = None
-                            best_area = float('inf')  # pick SMALLEST
-
-                            for mask in resized_masks:
-                                # Does this mask contain the YOLO center point?
-                                if mask[center_y, center_x] == 0:
-                                    continue
-
-                                # Also check the mask covers a decent chunk of the YOLO bbox
-                                bbox_region = mask[by1:by2, bx1:bx2]
-                                bbox_coverage = bbox_region.sum() / max((by2-by1)*(bx2-bx1), 1)
-                                
-                                if bbox_coverage < 0.3:
-                                    continue  # mask barely touches the detection
-
-                                # Pick the smallest mask that contains the center
-                                # (tightest fit around the object)
-                                area = mask.sum()
-                                if area < best_area:
-                                    best_area = area
-                                    best_mask = mask
-
-                            if best_mask is not None:
-                                det["mask"] = best_mask
-                                # Expand bbox to cover the full mask
-                                ys, xs = np.where(best_mask > 0)
+                            det["mask"] = mask
+                            ys, xs = np.where(mask > 0)
+                            if len(ys) > 0:
                                 det["bbox"] = (int(xs.min()), int(ys.min()),
                                                int(xs.max()), int(ys.max()))
             except Exception as e:
-                print(f"[WARN] FastSAM: {e}")
+                print(f"[WARN] MobileSAM: {e}")
 
             last_detections = detections
         elif detections:
