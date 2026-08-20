@@ -1,15 +1,13 @@
 """
-♻️ Recyclable Detector — YOLO-World Edition
-=============================================
-Zero-shot detection using text prompts. No training needed.
-Just tell it what to look for and it finds it.
+v1: YOLO-World detection only, drawing bounding boxes.
 
-Setup:
-    pip install ultralytics --upgrade
+Kept for the record, not maintained. The current pipeline is ../detector.py.
+See README.md in this directory for what changed and why.
 
 Usage:
-    python sam_clip_detector.py
+    python prior/v1_boxes_only.py
 """
+
 
 import time
 import cv2
